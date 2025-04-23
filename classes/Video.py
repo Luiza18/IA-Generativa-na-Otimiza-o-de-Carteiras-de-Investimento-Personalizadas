@@ -2,6 +2,7 @@ import yt_dlp
 import os
 import whisper
 import re
+import requests
 
 class Video:
     def __init__(self):
@@ -59,7 +60,33 @@ class Video:
         with open(self.__trasncricao_audio, 'w', encoding="utf-8") as arquivo:
             arquivo.write(trasncricao)
 
+
+    def resumir(self):
+        
+        #with open(self.__trasncricao_audio, 'r', encoding="utf-8") as arquivo:
+        with open("C:\\Users\\Luiza\\Documents\\TG\\doc\\KArD5_L1amQ.txt", 'r', encoding="utf-8") as arquivo:
+            transcricao = arquivo.read()
+
+        resposta = requests.post(
+            'http://localhost:11434/api/generate',
+            json={
+                "model" : "deepseek-coder",
+                "prompt" : f"Resuma o seguinte conteúdo de maneira clara e objetiva (sem análises extras):\n\n{transcricao}",
+                "stream" : False
+            }
+        )
+
+        #print(f'Resposta : {resposta.content}')
+
+        if resposta.status_code == 200:
+            resumo = resposta.json()['response']
+
+            with open("C:\\Users\\Luiza\\Documents\\TG\\doc\\resumo.txt", 'w', encoding="utf-8") as file:
+                file.write(resumo)
+
+
     def run(self, url):
-        self.baixar_video(url)
-        self.transcrever()
+        #self.baixar_video(url)
+        #self.transcrever()
+        self.resumir()
 
