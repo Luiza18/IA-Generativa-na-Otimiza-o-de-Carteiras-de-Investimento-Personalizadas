@@ -70,7 +70,7 @@ class Video:
         resposta = requests.post(
             'http://localhost:11434/api/generate',
             json={
-                "model" : "deepseek-coder",
+                "model" : "qwen2.5",
                 "prompt" : f"Resuma o seguinte conteúdo de maneira clara e objetiva (sem análises extras):\n\n{transcricao}",
                 "stream" : False
             }
@@ -86,7 +86,7 @@ class Video:
 
 
     def run(self, url):
-        #self.baixar_video(url)
-        #self.transcrever()
+        self.baixar_video(url)
+        self.transcrever()
         self.resumir()
 
