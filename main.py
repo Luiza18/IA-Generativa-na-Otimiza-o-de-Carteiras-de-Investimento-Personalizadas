@@ -1,7 +1,10 @@
 from classes.Video import Video
+from classes.Resumo import Resumo
 
-url = "https://www.youtube.com/watch?v=KArD5_L1amQ"
+url = "https://www.youtube.com/watch?v=lq1wkuwA2VE"
 
-video = Video()
+#video = Video(url)
+#video.trasncrever()
 
-video.run(url)
+conteudo = Resumo(url)
+conteudo.resumir_diretorio()

@@ -2,27 +2,33 @@ import yt_dlp
 import os
 import whisper
 import re
-import requests
+from config import DIRETORIO_TRANSCRICAO, DIRETORIO_AUDIO
 
 class Video:
-    def __init__(self):
-        self.__audio_path = self.__trasncricao_audio = None
+    def __init__(self, url):
+        self.__url = url
+        self.__id_video = self.__extraia_video_id()
+        self.__audio_path = self.__transcricao_audio = None
 
-    def __extraia_video_id(self, url):
-        # Expressão regular para extrair o código do vídeo da URL
-        match = re.search(r"v=([a-zA-Z0-9_-]+)", url)
+    def __extraia_video_id(self):
+        match = re.search(r"v=([a-zA-Z0-9_-]+)", self.__url)
         if match:
             return match.group(1)
         else:
-            raise ValueError("Não foi possível extrair o ID do vídeo da URL fornecida.") 
+            raise ValueError("Não foi possível extrair o ID do vídeo da URL fornecida.")
 
-    def baixar_video(self, url, pasta_destino="audios"):
-        os.makedirs(pasta_destino, exist_ok=True)
+    @property
+    def get_id_video(self):
+        return self.__id_video
 
-        video_id = self.__extraia_video_id(url)
+    @property
+    def get_transcricao_audio(self):
+        return self.__transcricao_audio
 
-        opcoes = {
-            "outtmpl": os.path.join(pasta_destino, f"{video_id}.%(ext)s"),  # Nome do vídeo como nome do arquivo
+    def __baixar_video(self):
+
+        configuracoes = {
+            "outtmpl": os.path.join(DIRETORIO_AUDIO, f"{self.__id_video}.%(ext)s"), 
             "format": "bestaudio/best",
             "postprocessors": [
                 {
@@ -34,59 +40,22 @@ class Video:
         }
 
         # Use extract_info para obter informações do vídeo
-        with yt_dlp.YoutubeDL(opcoes) as ydl:
-            ydl.extract_info(url, download=True)  # Obtém informações do vídeo e baixa o áudio
+        with yt_dlp.YoutubeDL(configuracoes) as ydl:
+            ydl.extract_info(self.__url, download=True)  # Obtém informações do vídeo e baixa o áudio
 
-
-        audio = video_id + ".mp3"
-        txt = video_id + ".txt"
-
-        self.__audio_path = os.path.join(os.getcwd(), pasta_destino, audio)
-        self.__trasncricao_audio = os.path.join(os.getcwd(), "doc", txt)
-
+        self.__audio_path = DIRETORIO_AUDIO + "\\" + self.__id_video + ".mp3"
+        self.__transcricao_audio = DIRETORIO_TRANSCRICAO + '\\' +  self.__id_video + ".txt"
 
     def transcrever(self):
+        self.__baixar_video()
+        
         if not self.__audio_path or not os.path.exists(self.__audio_path):
-            print(f"Erro: Arquivo de áudio não encontrado! ({self.__audio_path})")
             return
 
         modelo = whisper.load_model("base")
 
         resposta = modelo.transcribe(self.__audio_path)
-        trasncricao =  resposta["text"]
+        transcricao =  resposta["text"]
 
-        #arquivo = str(self.__trasncricao_audio)
-
-        with open(self.__trasncricao_audio, 'w', encoding="utf-8") as arquivo:
-            arquivo.write(trasncricao)
-
-
-    def resumir(self):
-        
-        #with open(self.__trasncricao_audio, 'r', encoding="utf-8") as arquivo:
-        with open("C:\\Users\\Luiza\\Documents\\TG\\doc\\KArD5_L1amQ.txt", 'r', encoding="utf-8") as arquivo:
-            transcricao = arquivo.read()
-
-        resposta = requests.post(
-            'http://localhost:11434/api/generate',
-            json={
-                "model" : "qwen2.5",
-                "prompt" : f"Resuma o seguinte conteúdo de maneira clara e objetiva (sem análises extras):\n\n{transcricao}",
-                "stream" : False
-            }
-        )
-
-        #print(f'Resposta : {resposta.content}')
-
-        if resposta.status_code == 200:
-            resumo = resposta.json()['response']
-
-            with open("C:\\Users\\Luiza\\Documents\\TG\\doc\\resumo.txt", 'w', encoding="utf-8") as file:
-                file.write(resumo)
-
-
-    def run(self, url):
-        self.baixar_video(url)
-        self.transcrever()
-        self.resumir()
-
+        with open(self.__transcricao_audio, 'w', encoding="utf-8") as arquivo:
+            arquivo.write(transcricao)
