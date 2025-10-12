@@ -12,8 +12,8 @@ class Resumo():
             'http://localhost:11434/api/generate',
             json={
                 "model" : "qwen2.5",
-                "prompt" : f"Resuma o seguinte conteúdo de maneira clara e objetiva (sem análises extras):\n\n{transcricao}",
-                "system" : "Você é um analista de investimentos sênior, e deseja encontrar melhores investimentos com o cenário atual",
+                "prompt" : f"Resuma o seguinte conteúdo de maneira clara e objetiva:\n\n{transcricao}",
+                "system" : "Você é um analista de investimentos sênior, e deseja encontrar melhores investimentos com o cenário atual, me passe os melhores segmentos e tipos de investimentos para investir",
                 "stream" : False
             }
         )
@@ -32,7 +32,9 @@ class Resumo():
 
         arquivo_resumo = DIRETORIO_RESUMO + '\\' + self.__video.get_id_video + ".txt"
 
+        print('Gerando Resumo ...')
         self.__gerador_resumo(transcricao,arquivo_resumo)
+        print('Resumo Gerado!!!!!!!!!')
 
     def resumir_diretorio(self):
 
