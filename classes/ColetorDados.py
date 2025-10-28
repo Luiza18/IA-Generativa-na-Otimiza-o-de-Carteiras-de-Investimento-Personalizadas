@@ -13,7 +13,7 @@ from pypfopt import risk_models
 from pypfopt import expected_returns
 from pypfopt.expected_returns import mean_historical_return
 from pypfopt.risk_models import CovarianceShrinkage
-from classes.PostegreSQL import PostgresSQL
+from classes.PostgreSQL import PostgresSQL
 from config import DB_CONNECTION_STRING, FOLDER
 
 
@@ -24,7 +24,7 @@ class ColetorDados:
         self.__options.add_argument("--headless")
         self.__options.add_argument("--disable-gpu")
         self.__options.add_argument("--window-size=1920,1080")
-        self.__postegre = PostgresSQL(DB_CONNECTION_STRING)
+        self.__postgre = PostgresSQL(DB_CONNECTION_STRING)
   
     def __iniciar_driver(self):
         return webdriver.Chrome(options=self.__options)
@@ -172,11 +172,11 @@ class ColetorDados:
         return df
 
     def coletar_precos(self):
-        df = self.__postegre.read('ATIVOS')
+        df = self.__postgre.read('ATIVOS')
         tickers = df['TICKER'].to_list()
 
         tickers_yahoo = [t + ".SA" for t in tickers]
-        inicio = datetime.today() - timedelta(days= 1* 365)
+        inicio = datetime.today() - timedelta(days= 90)
         fim = datetime.today()
 
         dfs = []
@@ -184,34 +184,33 @@ class ColetorDados:
             try:
                 dados = yf.download(yahoo_ticker, start=inicio, end=fim, interval="1mo", auto_adjust=True)
 
-                if not dados.empty:
+                if dados is not None:
+                    if not dados.empty: 
                     
-                    dados = dados.reset_index()
+                        dados = dados.reset_index()
 
-                    if isinstance(dados.columns, pd.MultiIndex):
-                        dados.columns = dados.columns.get_level_values(0)
-                    
-                    dados = dados[["Date", "Close"]].copy()
+                        if isinstance(dados.columns, pd.MultiIndex):
+                            dados.columns = dados.columns.get_level_values(0)
+                        
+                        dados = dados[["Date", "Close"]].copy()
 
-                    dados['Tickers'] = original
-                    dfs.append(dados)
+                        dados['TICKER'] = original
+                        dfs.append(dados)
 
             except Exception as e:
                 print(f"❌ Erro em {original}: {e}")
 
         
         df_final = pd.concat(dfs, ignore_index=True)
-        df_final = df_final.rename(columns={"Date": "DATA", "Close": "PRECO"}, inplace=True)
+        df_final.rename(columns={"Date": "DATA", "Close": "PRECO"}, inplace=True)
         df_final['DATA'] = pd.to_datetime(df_final['DATA']).dt.strftime('%Y-%m-%d')
-        df['PRECO'] = df['PRECO'].astype(float)
-        df = df.drop_duplicates(subset=['DATA', 'PRECO'], keep='first')
-        df_final = df_final[['DATA', 'TICKER', 'PRECO']]
-       
-        self.__postegre.sincronizar('PRECOS',df_final,['TICKER', 'DATA'])
+        df_final['PRECO'] = df_final['PRECO'].astype(float)
+        df_final = df_final.drop_duplicates(subset=['DATA', 'PRECO'], keep='first')
+        self.__postgre.sincronizar('PRECOS',df_final,['TICKER', 'DATA'])
 
     def calculo_markowitz(self,risk_free_rate=0.02):
         # Ler dados
-        df = self.__postegre.read('PRECOS')
+        df = self.__postgre.read('PRECOS')
 
         # Remove duplicatas
         df = df.drop_duplicates(subset=["Date", "Tickers"], keep="last")

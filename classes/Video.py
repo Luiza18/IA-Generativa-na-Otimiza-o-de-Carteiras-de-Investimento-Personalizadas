@@ -7,10 +7,10 @@ from config import DIRETORIO_TRANSCRICAO, DIRETORIO_AUDIO
 class Video:
     def __init__(self, url):
         self.__url = url
-        self.__id_video = self.__extraia_video_id()
+        self.__id_video = self.__extrair_video_id()
         self.__audio_path = self.__transcricao_audio = None
 
-    def __extraia_video_id(self):
+    def __extrair_video_id(self):
         match = re.search(r"v=([a-zA-Z0-9_-]+)", self.__url)
         if match:
             return match.group(1)

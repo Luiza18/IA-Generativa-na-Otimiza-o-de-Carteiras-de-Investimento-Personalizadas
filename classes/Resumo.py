@@ -3,6 +3,7 @@ from classes.Video import Video
 from config import DIRETORIO_RESUMO
 import os
 
+
 class Resumo():
     def __init__(self, url):
         self.__video = Video(url)
@@ -24,6 +25,10 @@ class Resumo():
           with open(arquivo_resumo, 'w', encoding="utf-8") as file:
             file.write(resumo)
 
+        else:
+            print(f"❌ Erro na resposta da API: {resposta.status_code}")
+            print("Corpo da resposta:", resposta.text)
+
     def resumir_arquivo(self):
         self.__video.transcrever()
     
@@ -31,6 +36,7 @@ class Resumo():
             transcricao = arquivo.read()
 
         arquivo_resumo = DIRETORIO_RESUMO + '\\' + self.__video.get_id_video + ".txt"
+        print(f"Endereço arquivi: {arquivo_resumo}")
 
         print('Gerando Resumo ...')
         self.__gerador_resumo(transcricao,arquivo_resumo)
