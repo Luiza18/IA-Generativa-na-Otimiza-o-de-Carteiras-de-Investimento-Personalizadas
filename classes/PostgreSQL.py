@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine, text
 import pandas as pd
-from pypika import Table, Case, Query
+from pypika import Table, Query
 import pandas as pd
 
 class PostgresSQL:
@@ -12,17 +12,21 @@ class PostgresSQL:
         if self._connection is None:
             self._connection = self._engine.connect()
 
+            try:
+                self._connection.rollback()
+            except Exception:
+                ...
+
     def __disconnect(self):
         if self._connection is not None:
             self._connection.close()
             self._connection = None
 
-    def read(self, tabela: str,) -> pd.DataFrame:
+    def read(self, tabela: str) -> pd.DataFrame:
         df = None
         try:
             self.__connect()
             df = pd.read_sql_table(tabela, self._connection, schema='public')
-        
         finally:
             self.__disconnect()
         return df
@@ -36,68 +40,82 @@ class PostgresSQL:
             self.__disconnect()
         return df
 
+
     def comparar_dados(self, tabela: str, pk_cols: list, new_df: pd.DataFrame):
         df_old = self.read(tabela)
-      
-        new_df = new_df[df_old.columns]
+        new_df = new_df[df_old.columns].copy()
 
         for col in pk_cols:
-            if col in df_old.columns and col in new_df.columns:
-                # Se for coluna de data, converte ambas para datetime
-                if "data" in col.lower():
-                    df_old[col] = pd.to_datetime(df_old[col], errors="coerce", dayfirst=False)
-                    new_df[col] = pd.to_datetime(new_df[col], errors="coerce", dayfirst=False)
-                else:
-                    # Força o tipo object para comparar com segurança
-                    df_old[col] = df_old[col].astype(str)
-                    new_df[col] = new_df[col].astype(str)
+            if pd.api.types.is_datetime64_any_dtype(df_old[col]):
+                df_old[col] = pd.to_datetime(df_old[col]).dt.strftime('%Y-%m-%d')
+            else:
+                df_old[col] = df_old[col].astype(str)
+            
+            new_df[col] = new_df[col].astype(str)
 
-        old_keys = set(map(tuple,df_old[pk_cols].values))
+        df_old["_key"] = df_old[pk_cols].agg("|".join, axis=1)
+        new_df["_key"] = new_df[pk_cols].agg("|".join, axis=1)
 
-        new_df_keys = new_df[pk_cols].apply(tuple, axis=1)
-        add_df = new_df[~new_df_keys.isin(old_keys)]
+        old_keys = set(df_old["_key"])
+        new_keys = set(new_df["_key"])
 
-        merged = df_old.merge(new_df, on=pk_cols, how="inner", suffixes=("_old", "_new"))
-        cols_to_check = [c for c in df_old.columns if c not in pk_cols]
+        # 1️⃣ Linhas novas (presentes em new_df mas não em df_old)
+        insert = new_df[new_df["_key"].isin(new_keys - old_keys)].copy()
 
-        if cols_to_check:
-            mask = (merged[[f"{c}_old" for c in cols_to_check]].values != merged[[f"{c}_new" for c in cols_to_check]].values).any(axis=1)
-            to_update = merged.loc[mask, pk_cols]
-        else:
-            to_update = pd.DataFrame(columns=pk_cols)
+        # 2️⃣ Linhas alteradas (mesmas chaves, mas valores diferentes)
+        common_keys = old_keys & new_keys
+        old_common = df_old[df_old["_key"].isin(common_keys)].set_index("_key")
+        new_common = new_df[new_df["_key"].isin(common_keys)].set_index("_key")
 
-        if not to_update.empty:
-            update_keys = set(map(tuple, to_update.values))
-            update_df = new_df[new_df[pk_cols].apply(tuple, axis=1).isin(update_keys)]
-        else:
-            update_df = pd.DataFrame(columns=df_old.columns)
+        if not old_common.empty and not new_common.empty:
+            old_common = old_common.sort_index()
+            new_common = new_common.sort_index()
 
-        return add_df, update_df
+        non_pk_cols = [col for col in df_old.columns if col not in pk_cols + ["_key"]]
+        
+        
+        diff_mask = (old_common[non_pk_cols] != new_common[non_pk_cols]).any(axis=1)
+        update = new_common[diff_mask].reset_index()
 
-    def sincronizar(self, tabela: str, new_df: pd.DataFrame, pk_cols: list):
+       
+        for df in [insert, update]:
+            df.drop(columns="_key", inplace=True, errors="ignore")
+
+        return insert, update
+
+
+    def __insert(self,tabela: Table, df: pd.DataFrame):
         self.__connect()
-        add_df, update_df = self.comparar_dados(tabela, pk_cols, new_df)
-        table = Table(tabela)
-        # --- Inserir ---
-        for _, row in add_df.iterrows():
-            query = Query.into(table).columns(*row.index).insert(*row.values)
+        for _, row in df.iterrows():
+            query = Query.into(tabela).columns(*row.index).insert(*row.values)
             sql_statement = str(query)
             self._connection.execute(text(sql_statement))
 
-        # --- Atualizar ---
-        for _, row in update_df.iterrows():
-            q = Query.update(table)
+        self._connection.commit()
+        self.__disconnect()
+
+    def __update(self, tabela: Table, df: pd.DataFrame, pk_cols:list):
+        self.__connect()
+
+        for _, row in df.iterrows():
+            q = Query.update(tabela)
             for col in row.index:
                 if col not in pk_cols:
-                    q = q.set(table[col], row[col])
-            # Condições da chave primária
+                    q = q.set(tabela[col], row[col])
+            
             for col in pk_cols:
-                q = q.where(table[col] == row[col])
+                q = q.where(tabela[col] == row[col])
 
             sql_statement = str(q)
             self._connection.execute(text(sql_statement))
 
         self._connection.commit()
-
         self.__disconnect()
-       
+
+    def sincronizar(self, tabela: str, new_df: pd.DataFrame, pk_cols: list):
+        insert_df, update_df = self.comparar_dados(tabela, pk_cols, new_df)
+        tabela = Table(tabela)
+
+        self.__insert(tabela, insert_df)
+        self.__update(tabela, update_df, pk_cols)
+              

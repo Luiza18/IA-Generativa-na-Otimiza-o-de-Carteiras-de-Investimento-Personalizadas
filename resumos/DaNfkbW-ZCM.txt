@@ -1,0 +1,7 @@
+**Segmentos e tipos de investimentos**
+
+* **Stocks:** É um investimento que envolve a propriedade de ações ou de empresas.
+* **Fundos:** Um investimento que coleita dinheiro de vários investidores para comprar ações ou investimentos.
+* **Debitos:** Um investimento que envolve a contratação de dívidas a prazo a um interesse específico.
+* **Options:** Uma opção é um contrato que permite um investidor comprar ou vender um ativo a um preço determinado no futuro.
+* **Contratos:** Um investimento que envolve a contratação de serviços ou direitos a um fornecedor a prazo a um preço determinado.
