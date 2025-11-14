@@ -15,8 +15,10 @@ logging.basicConfig(level=logging.INFO,
 
 
 class Carteira:
-
-    _PROMPT_TEMPLATE = (
+    def __init__(self):
+        self.__postgre = PostgresSQL(DB_CONNECTION_STRING)
+        self.__resumo_texto = self.__ler_resumo()
+        self.__PROMPT_TEMPLATE = (
         "Você é um modelo de classificação SEMÂNTICA. Sua tarefa é identificar quais segmentos da lista oficial "
         "são REALMENTE relevantes para o contexto do texto analisado.\n\n"
         "REGRAS OBRIGATÓRIAS:\n"
@@ -31,10 +33,6 @@ class Carteira:
         "SEGMENTOS MAIS RELEVANTES:"
     )
 
-    def __init__(self):
-        self.db = PostgresSQL(DB_CONNECTION_STRING)
-        self.resumo_texto = self.__ler_resumo()
-
     def __ler_resumo(self) -> str:
         try:
             with open(RESUMO_GERAL, "r", encoding="utf-8") as f:
@@ -47,18 +45,17 @@ class Carteira:
         ativos = Table("ATIVOS")
         return Query.from_(ativos).select(ativos.SEGMENTO).distinct()
 
-    def __buscar_segmentos_db(self) -> list:
-        df = self.db.query(self.__query_segmentos().get_sql())
+    def __buscar_segmentos_postgre(self) -> list:
+        df = self.__postgre.query(self.__query_segmentos().get_sql())
 
         if df is None or df.empty:
             logging.error("❌ Nenhum segmento foi retornado do banco")
             return []
 
-        logging.info("✅ Segmentos coletados do DB")
+        logging.info("✅ Segmentos coletados do __postgre")
         return df["SEGMENTO"].dropna().tolist()
 
-    @staticmethod
-    def __normalizar(s: str) -> str:
+    def __normalizar(self,s: str) -> str:
         s = str(s).strip().lower()
         return "".join(
             c
@@ -67,26 +64,26 @@ class Carteira:
         )
 
     def __segmentos_relevantes_llm(self) -> list:
-        segmentos_db = self.__buscar_segmentos_db()
+        segmentos___postgre = self.__buscar_segmentos_postgre()
 
-        if not segmentos_db or not self.resumo_texto:
+        if not segmentos___postgre or not self.__resumo_texto:
             return []
 
         SEGMENTOS_RF = {
             "Renda Fixa", "Tesouro Direto", "Títulos Públicos",
-            "CDB", "CRI", "CRA", "LCI", "LCA", "Debêntures",
+            "C__postgre", "CRI", "CRA", "LCI", "LCA", "Debêntures",
             "IMAB-5",
             "SELIC", "CDI", "IPCA"  
         }
 
         mapa_normalizado = {
-            self.__normalizar(s): s for s in segmentos_db
+            self.__normalizar(s): s for s in segmentos___postgre
         }
         segmentos_norm = list(mapa_normalizado.keys())
 
-        prompt = self._PROMPT_TEMPLATE.format(
-            lista_segmentos="\n".join(sorted(set(segmentos_db))),
-            conteudo_resumo=self.resumo_texto
+        prompt = self.__PROMPT_TEMPLATE.format(
+            lista_segmentos="\n".join(sorted(set(segmentos___postgre))),
+            conteudo_resumo=self.__resumo_texto
         )
 
         logging.info("🔄 Consultando LLM para segmentação...")
@@ -132,14 +129,14 @@ class Carteira:
                     logging.info(f"👍 Segmento válido pela LLM: {oficial}")
 
         for seg in SEGMENTOS_RF:
-            if seg in segmentos_db and seg not in segmentos_finais:
+            if seg in segmentos___postgre and seg not in segmentos_finais:
                 segmentos_finais.append(seg)
                 logging.info(f"⚠️ Forçando inclusão de segmento essencial: {seg}")
 
         logging.info(f"🎯 Segmentos relevantes finais: {segmentos_finais}")
         return segmentos_finais
 
-    def __listar_ativos_por_segmentos(self) -> list:
+    def __listar_ativos_por_segmento(self) -> list:
         segmentos = self.__segmentos_relevantes_llm()
 
         if not segmentos:
@@ -154,7 +151,7 @@ class Carteira:
             .distinct()
         )
 
-        df = self.db.query(query.get_sql())
+        df = self.__postgre.query(query.get_sql())
         if df is None or df.empty:
             logging.warning("⚠️ Nenhum ativo encontrado no filtro de segmentos")
             return []
@@ -167,7 +164,7 @@ class Carteira:
                 .select(ativos_tb.TICKER)
                 .limit(30)
             )
-            extra = self.db.query(extra_query.get_sql())
+            extra = self.__postgre.query(extra_query.get_sql())
             if extra is not None:
                 df = pd.concat([df, extra]).drop_duplicates()
 
@@ -176,7 +173,7 @@ class Carteira:
 
 
     def __obter_historico_precos(self) -> pd.DataFrame:
-        tickers = self.__listar_ativos_por_segmentos()
+        tickers = self.__listar_ativos_por_segmento()
 
         if not tickers:
             return pd.DataFrame()
@@ -189,7 +186,7 @@ class Carteira:
             .orderby(precos_tb.DATA)
         )
 
-        df = self.db.query(query.get_sql())
+        df = self.__postgre.query(query.get_sql())
         if df is None or df.empty:
             return pd.DataFrame()
 
@@ -201,7 +198,6 @@ class Carteira:
 
         logging.info(f"📈 Histórico carregado: {df.shape}")
         return df
-
 
     def __limpar_pesos(self, carteiras: dict) -> dict:
         carteiras_filtradas = {}
@@ -302,4 +298,3 @@ class Carteira:
         with open("carteiras_otimizadas.json", "w", encoding="utf-8") as f:
             json.dump(carteiras_limpa, f, ensure_ascii=False, indent=4)
 
-        return carteiras_limpa

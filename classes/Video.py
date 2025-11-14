@@ -5,7 +5,7 @@ import re
 from config import DIRETORIO_TRANSCRICAO, DIRETORIO_AUDIO
 
 class Video:
-    def __init__(self, url):
+    def __init__(self, url:str):
         self.__url = url
         self.__id_video = self.__extrair_video_id()
         self.__audio_path = self.__transcricao_audio = None

@@ -30,7 +30,7 @@ class Resumo():
         else:
             logging.error(f"❌ Erro na resposta da API: {resposta.status_code} \nCorpo da resposda: {resposta.text}")
 
-    def resumir_arquivo(self, url: str):
+    def resumir_video(self, url: str):
         video = Video(url)
         video.transcrever()
     

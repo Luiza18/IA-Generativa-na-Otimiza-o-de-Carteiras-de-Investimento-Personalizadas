@@ -41,7 +41,7 @@ class PostgresSQL:
         return df
 
 
-    def comparar_dados(self, tabela: str, pk_cols: list, new_df: pd.DataFrame):
+    def __comparar_dados(self, tabela: str, pk_cols: list, new_df: pd.DataFrame):
         df_old = self.read(tabela)
         new_df = new_df[df_old.columns].copy()
 
@@ -113,7 +113,7 @@ class PostgresSQL:
         self.__disconnect()
 
     def sincronizar(self, tabela: str, new_df: pd.DataFrame, pk_cols: list):
-        insert_df, update_df = self.comparar_dados(tabela, pk_cols, new_df)
+        insert_df, update_df = self.__comparar_dados(tabela, pk_cols, new_df)
         tabela = Table(tabela)
 
         self.__insert(tabela, insert_df)
