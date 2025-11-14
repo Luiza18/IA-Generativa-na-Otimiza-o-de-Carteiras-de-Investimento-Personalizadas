@@ -9,9 +9,6 @@ from pypika import Table, Query
 # === Leitura do Secret do Streamlit ===
 DB_CONNECTION_STRING = st.secrets["DB_CONNECTION_STRING"]
 
-# Debug temporário — delete após testar
-st.write("DEBUG: DB_CONNECTION_STRING =", DB_CONNECTION_STRING)
-
 st.set_page_config(layout="wide", page_title="Dashboard de Carteiras")
 
 
