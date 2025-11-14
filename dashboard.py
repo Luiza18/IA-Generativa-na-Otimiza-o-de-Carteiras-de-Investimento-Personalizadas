@@ -3,12 +3,12 @@ import pandas as pd
 import json
 import plotly.express as px
 from datetime import datetime, timedelta
-from config import DB_CONNECTION_STRING 
 from classes.PostgreSQL import PostgresSQL 
 from pypika import Table, Query
 
 st.set_page_config(layout="wide", page_title="Dashboard de Carteiras")
 
+DB_CONNECTION_STRING = st.secrets["DB_CONNECTION_STRING"]
 # --- Funções de Busca de Dados ---
 @st.cache_resource(ttl=600)
 def get_db_connection():
