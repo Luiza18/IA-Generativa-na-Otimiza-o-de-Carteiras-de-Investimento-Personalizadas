@@ -3,12 +3,18 @@ import pandas as pd
 import json
 import plotly.express as px
 from datetime import datetime, timedelta
-from classes.PostgreSQL import PostgresSQL 
+from classes.PostgreSQL import PostgresSQL
 from pypika import Table, Query
+
+# === Leitura do Secret do Streamlit ===
+DB_CONNECTION_STRING = st.secrets["DB_CONNECTION_STRING"]
+
+# Debug temporário — delete após testar
+st.write("DEBUG: DB_CONNECTION_STRING =", DB_CONNECTION_STRING)
 
 st.set_page_config(layout="wide", page_title="Dashboard de Carteiras")
 
-DB_CONNECTION_STRING = st.secrets["DB_CONNECTION_STRING"]
+
 # --- Funções de Busca de Dados ---
 @st.cache_resource(ttl=600)
 def get_db_connection():
@@ -17,6 +23,7 @@ def get_db_connection():
     except Exception as e:
         st.error(f"Erro ao conectar ao banco de dados: {e}")
         return None
+
 
 @st.cache_data(ttl=600)
 def load_json_data(filepath="carteiras_otimizadas.json"):
@@ -31,22 +38,23 @@ def load_json_data(filepath="carteiras_otimizadas.json"):
         st.error(f"Erro ao ler o arquivo JSON: {e}")
         return None
 
+
 @st.cache_data(ttl=3600)
 def get_data_for_dashboard(_db_conn, tickers_carteira: list):
     if not tickers_carteira:
         return pd.DataFrame(columns=['TICKER', 'SEGMENTO', 'CATEGORIA']), pd.DataFrame()
     
     ativos_table = Table("ATIVOS")
-    categorias_table = Table("CATEGORIAS") 
+    categorias_table = Table("CATEGORIAS")
     
     q_info = (
         Query.from_(ativos_table)
-        .left_join(categorias_table) 
-        .on(ativos_table.CATEGORIA == categorias_table.id) 
+        .left_join(categorias_table)
+        .on(ativos_table.CATEGORIA == categorias_table.id)
         .select(
-            ativos_table.TICKER, 
+            ativos_table.TICKER,
             ativos_table.SEGMENTO,
-            categorias_table.CATEGORIA 
+            categorias_table.CATEGORIA
         )
         .where(ativos_table.TICKER.isin(tickers_carteira))
     )
@@ -69,7 +77,7 @@ def get_data_for_dashboard(_db_conn, tickers_carteira: list):
     q_precos = (
         Query.from_(precos_table)
         .select(precos_table.DATA, precos_table.TICKER, precos_table.PRECO)
-        .where(precos_table.TICKER.isin(tickers_carteira)) 
+        .where(precos_table.TICKER.isin(tickers_carteira))
         .where(precos_table.DATA >= data_limite)
         .orderby(precos_table.DATA)
     )
@@ -77,14 +85,14 @@ def get_data_for_dashboard(_db_conn, tickers_carteira: list):
     try:
         df_precos = _db_conn.query(q_precos.get_sql())
         if df_precos.empty:
-                st.warning("Nenhum dado de preço encontrado nos últimos 3 meses.")
-                return df_info_ativos, pd.DataFrame()
+            st.warning("Nenhum dado de preço encontrado nos últimos 3 meses.")
+            return df_info_ativos, pd.DataFrame()
                 
         df_precos_pivot = df_precos.pivot(
             index='DATA', columns='TICKER', values='PRECO'
         )
         df_precos_pivot.index = pd.to_datetime(df_precos_pivot.index)
-        df_precos_pivot = df_precos_pivot.ffill().dropna(axis=1, how='all') 
+        df_precos_pivot = df_precos_pivot.ffill().dropna(axis=1, how='all')
         
         return df_info_ativos, df_precos_pivot
 
@@ -92,34 +100,43 @@ def get_data_for_dashboard(_db_conn, tickers_carteira: list):
         st.error(f"Erro ao buscar preços históricos: {e}")
         return df_info_ativos, pd.DataFrame()
 
+
 def create_backtest_df(precos_pivot: pd.DataFrame, pesos: dict):
     portfolio_cols_existentes = [col for col in pesos.keys() if col in precos_pivot.columns]
     precos_carteira = precos_pivot[portfolio_cols_existentes]
+    
     if precos_carteira.empty:
         st.warning("Não foi possível calcular o rendimento (ativos sem dados de preço).")
         return pd.DataFrame()
+    
     pesos_series = pd.Series(pesos).reindex(precos_carteira.columns).fillna(0)
-    retornos_diarios_ativos = precos_carteira.pct_change() 
+    retornos_diarios_ativos = precos_carteira.pct_change()
     retorno_diario_carteira = (retornos_diarios_ativos * pesos_series).sum(axis=1)
+    
     df_retornos = pd.DataFrame({'Carteira_Factor': 1 + retorno_diario_carteira}).dropna()
+    
     if df_retornos.empty:
         return pd.DataFrame()
+    
     df_final = pd.DataFrame(index=df_retornos.index)
     df_final['Carteira (Base 100)'] = df_retornos['Carteira_Factor'].cumprod()
     df_final['Carteira (Base 100)'] = df_final['Carteira (Base 100)'] / df_final['Carteira (Base 100)'].iloc[0] * 100
+    
     return df_final
+
 
 def create_individual_return_df(precos_pivot: pd.DataFrame, pesos: dict):
     portfolio_cols_existentes = [col for col in pesos.keys() if col in precos_pivot.columns]
     precos_carteira = precos_pivot[portfolio_cols_existentes]
+    
     if precos_carteira.empty:
         return pd.DataFrame()
+    
     df_rendimento = ((precos_carteira / precos_carteira.iloc[0]) - 1) * 100
     return df_rendimento
 
 
 # --- Construção do Dashboard ---
-
 st.title("📈 Dashboard de Otimização de Carteiras")
 
 db_conn = get_db_connection()
@@ -133,8 +150,8 @@ perfil_conservador, perfil_moderado, perfil_arrojado = st.tabs(
 )
 
 for perfil_nome, aba in [
-    ("conservador", perfil_conservador), 
-    ("moderado", perfil_moderado), 
+    ("conservador", perfil_conservador),
+    ("moderado", perfil_moderado),
     ("arrojado", perfil_arrojado)
 ]:
     
@@ -147,17 +164,15 @@ for perfil_nome, aba in [
 
     if not pesos_dict:
         aba.info(f"Carteira '{perfil_nome}' não possui ativos alocados.")
-        continue 
+        continue
 
     tickers_carteira = list(pesos_dict.keys())
     
     df_info_ativos, df_precos = get_data_for_dashboard(db_conn, tickers_carteira)
 
     with aba:
-        # 1. Criar o df_pesos
         df_pesos = pd.DataFrame(pesos_dict.items(), columns=['Ativo', 'Peso'])
         
-        # 2. Criar o DataFrame mergeado principal (usado em todos os gráficos de composição)
         if not df_info_ativos.empty:
             df_merged_total = pd.merge(df_pesos, df_info_ativos, left_on='Ativo', right_on='TICKER')
         else:
@@ -165,8 +180,6 @@ for perfil_nome, aba in [
             df_merged_total['CATEGORIA'] = 'Não Categorizado'
             df_merged_total['SEGMENTO'] = 'Não Classificado'
         
-
-        # --- FILTROS GLOBAIS NO TOPO DA ABA ---
         st.markdown("#### Filtros da Carteira")
         
         all_categories = sorted(df_merged_total['CATEGORIA'].unique().tolist())
@@ -190,23 +203,18 @@ for perfil_nome, aba in [
                 key=f"seg_filter_{perfil_nome}"
             )
         
-        # 3. Aplicar os filtros para criar um DataFrame filtrado
         df_merged_filtrado = df_merged_total[
             (df_merged_total['CATEGORIA'].isin(selected_categories)) &
             (df_merged_total['SEGMENTO'].isin(selected_segments))
         ]
         
-
-        
         col_comp, col_div, col_seg = st.columns(3)
 
-        # --- Coluna 1 (Treemap por Ativo) ---
         with col_comp:
             st.subheader("Composição por Ativo")
-            
             fig_comp = px.treemap(
-                df_merged_filtrado, 
-                path=[px.Constant("Carteira"), 'Ativo'], 
+                df_merged_filtrado,
+                path=[px.Constant("Carteira"), 'Ativo'],
                 values='Peso',
                 title='Alocação por Ativo (Filtrado)',
                 custom_data=['Peso']
@@ -218,16 +226,15 @@ for perfil_nome, aba in [
             )
             st.plotly_chart(fig_comp, use_container_width=True, key=f"comp_{perfil_nome}")
 
-        # --- Coluna 2 (Pizza por Categoria) ---
         with col_div:
             st.subheader("Diversificação por Categoria")
             
             if not df_merged_filtrado.empty:
-                df_categoria_agregado = df_merged_filtrado.groupby('CATEGORIA')['Peso'].sum().reset_index() 
+                df_categoria_agregado = df_merged_filtrado.groupby('CATEGORIA')['Peso'].sum().reset_index()
                 
                 fig_div = px.pie(
-                    df_categoria_agregado, 
-                    values='Peso', 
+                    df_categoria_agregado,
+                    values='Peso',
                     names='CATEGORIA',
                     title='Alocação por Categoria (Filtrado)'
                 )
@@ -239,8 +246,7 @@ for perfil_nome, aba in [
                 st.plotly_chart(fig_div, use_container_width=True, key=f"div_{perfil_nome}")
             else:
                 st.info("Nenhum dado de categoria para os filtros selecionados.")
-        
-        # --- Coluna 3 (Pizza por Segmento) ---
+
         with col_seg:
             st.subheader("Diversificação por Segmento")
             
@@ -262,22 +268,20 @@ for perfil_nome, aba in [
             else:
                 st.info("Nenhum dado de segmento para os filtros selecionados.")
         
-        
         st.divider()
 
-        # --- Seção de Rendimento ---
-        
         if not df_precos.empty:
-            df_backtest = create_backtest_df(df_precos, pesos_dict) 
+            df_backtest = create_backtest_df(df_precos, pesos_dict)
             
             if not df_backtest.empty:
-                
                 st.subheader("Rendimento Total no Período (3 Meses)")
                 retorno_total_3m = (df_backtest['Carteira (Base 100)'].iloc[-1] / df_backtest['Carteira (Base 100)'].iloc[0]) - 1
+                
                 st.metric(
-                    label=f"Rendimento Total da Carteira", 
+                    label=f"Rendimento Total da Carteira",
                     value=f"{retorno_total_3m * 100:.2f}%"
                 )
+
                 st.divider()
 
                 st.subheader("Rendimento Mensal (%)")
@@ -293,7 +297,6 @@ for perfil_nome, aba in [
                 except Exception as e:
                     st.warning(f"Não foi possível calcular o rendimento mensal: {e}")
                 
-                # --- Seção de Rendimento Individual ---
                 st.divider()
                 st.subheader("Rendimento Individual dos Ativos (%)")
                 
@@ -301,7 +304,7 @@ for perfil_nome, aba in [
                 
                 if not df_individual_raw.empty:
                     available_tickers = df_merged_filtrado['Ativo'].tolist()
-                    all_tickers_with_data = df_individual_raw.columns.tolist() 
+                    all_tickers_with_data = df_individual_raw.columns.tolist()
                     options_for_multiselect = [
                         t for t in all_tickers_with_data if t in available_tickers
                     ]
